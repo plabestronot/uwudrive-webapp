@@ -1,5 +1,4 @@
 name: Build Android
-run-name: Creating Production Ready Android App 🚀
 on:
   push:
     branches:

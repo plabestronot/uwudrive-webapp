@@ -30,10 +30,10 @@ jobs:
           node-version: 19.x
 
       - name: install dependencies
-        run: npm ci
+        run: pnpm ci
 
       - name: Create Build Folder
-        run: npm run build
+        run: pnpm run build
 
       - name: Add android folder if not present
         run: if [ ! -d "./android" ]; then npx cap add android; fi
@@ -45,7 +45,7 @@ jobs:
         run: npx cap copy
       
       - name: Generate icons and splash screen to android folder 
-        run:  if [ -d "./resources" ]; then npm install @capacitor/assets --save-dev && npx capacitor-assets generate --android; fi
+        run:  if [ -d "./resources" ]; then pnpm install @capacitor/assets --save-dev && npx capacitor-assets generate --android; fi
         
       - name: Build app bundle
         run: cd android && ./gradlew bundle && ./gradlew assembleDebug

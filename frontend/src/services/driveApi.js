@@ -1,4 +1,4 @@
-const API_BASE_URL = "http://localhost:8787/api/drive";
+const API_BASE_URL = "https://drive.plabuwu.workers.dev/api/drive";
 
 async function handleResponse(response) {
   if (!response.ok) {

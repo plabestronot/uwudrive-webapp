@@ -65,6 +65,14 @@ jobs:
         id: current-datetime
         run: echo "CURRENT_DATETIME=$(date +'%Y-%m-%d-%H_%M_%S%z')" >> "$GITHUB_OUTPUT"
 
+      - name: Install Hub CLI
+        run: |
+          HUB_VERSION="2.14.2"
+          HUB_URL="https://github.com/github/hub/releases/download/v${HUB_VERSION}/hub-linux-amd64-${HUB_VERSION}.tgz"
+          curl -sSL $HUB_URL | tar -xz
+          sudo mv ./hub-linux-amd64-${HUB_VERSION}/bin/hub /usr/local/bin/
+          hub --version
+
       - name: Build Release
         shell: bash
         run: |

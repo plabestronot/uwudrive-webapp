@@ -1,4 +1,5 @@
-name: Build Android
+name: Android Build
+
 on:
   push:
     branches:
@@ -23,29 +24,38 @@ jobs:
           distribution: "zulu"
           java-version: "21"
 
-      - name: Setup Node.js
+      - name: Setup Node.js and pnpm
         uses: actions/setup-node@v3
         with:
           node-version: 20.x
+          cache: 'pnpm'
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - name: install dependencies
-        run: npm ci
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Create Build Folder
-        run: npm run build
+        run: pnpm run build
 
       - name: Add android folder if not present
-        run: if [ ! -d "./android" ]; then npx cap add android; fi
+        run: if [ ! -d "./android" ]; then pnpm exec cap add android; fi
 
       - name: Capacitor update
-        run: npx cap update
+        run: pnpm exec cap update
 
       - name: Capacitor copy
-        run: npx cap copy
-      
-      - name: Generate icons and splash screen to android folder 
-        run:  if [ -d "./resources" ]; then npm install @capacitor/assets --save-dev && npx capacitor-assets generate --android; fi
-        
+        run: pnpm exec cap copy
+
+      - name: Generate icons and splash screen to android folder
+        run: |
+          if [ -d "./resources" ]; then 
+            pnpm add -D @capacitor/assets
+            pnpm exec capacitor-assets generate --android
+          fi
+
       - name: Build app bundle
         run: cd android && ./gradlew bundle && ./gradlew assembleDebug
 
@@ -60,10 +70,6 @@ jobs:
       - name: Check folder content of android output
         run: ls ./android/app/build/outputs/bundle/release
 
-      - name: Set Tag
-        id: current-datetime
-        run: echo "CURRENT_DATETIME=$(date +'%Y-%m-%d-%H_%M_%S%z')" >> "$GITHUB_OUTPUT"
-
       - name: Install Hub CLI
         run: |
           HUB_VERSION="2.14.2"
@@ -75,8 +81,8 @@ jobs:
       - name: Build Release
         shell: bash
         run: |
-          hub release create ${{ steps.current-datetime.outputs.CURRENT_DATETIME }} \
-          -m ${{ steps.current-datetime.outputs.CURRENT_DATETIME }} \
+          hub release create latest \
+          -m "latest" \
           -a ./android/app/build/outputs/bundle/release/app-release-signed.aab \
           -a ./android/app/build/outputs/apk/debug/app-debug.apk
         env:

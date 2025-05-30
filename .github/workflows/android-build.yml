@@ -3,7 +3,7 @@ name: 'publish-android'
 on:
   push:
     branches:
-      - master
+      - release
 
 # This workflow will trigger on each push to the `release` branch to create or update a GitHub release, build your Android app, and upload the artifacts to the release.
 
@@ -47,6 +47,18 @@ jobs:
         with:
           distribution: 'temurin' # Specifies the Temurin distribution of OpenJDK.
           java-version: '17' # Installs JDK version 17, matching the 'openjdk-17-jdk' from your setup script.
+
+      - name: install dependencies (ubuntu only)
+        # This step installs the necessary system dependencies for Tauri on Ubuntu,
+        # including webkit2gtk, gdk-3.0, and other GTK-related libraries,
+        # as well as additional dependencies specified by the user.
+        # These are required for the Tauri build process even when targeting Android,
+        # as the build is performed on a Linux runner.
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libssl-dev libayatana-appindicator3-dev
+        shell: bash # Ensures the command runs in a bash shell.
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3 # Action to set up the Android SDK.

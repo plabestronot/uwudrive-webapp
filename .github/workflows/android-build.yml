@@ -3,7 +3,7 @@ name: 'publish-android'
 on:
   push:
     branches:
-      - master
+      - release
 
 # This workflow will trigger on each push to the `release` branch to create or update a GitHub release, build your Android app, and upload the artifacts to the release.
 
@@ -81,21 +81,31 @@ jobs:
       - name: install frontend dependencies
         run: pnpm install # Installs your frontend dependencies.
 
-      - name: Build Tauri Android app
-        uses: tauri-apps/tauri-action@v0 # Uses the official Tauri GitHub Action for building.
+      - name: Build Tauri Android app (Direct Command)
+        # This step directly executes the pnpm tauri android build --apk command,
+        # ensuring only the Android build process is triggered.
+        run: pnpm tauri android build --apk
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Required for the action to interact with GitHub (e.g., creating releases).
           # Environment variables for Android signing. These are picked up by Gradle during the build process.
           # Ensure these secrets are correctly configured in your GitHub repository settings.
           ORG_GRADLE_PROJECT_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           ORG_GRADLE_PROJECT_KEY_PASSWORD: ${{ secrets.KEY_ALIAS_PASSWORD }}
+
+      - name: Upload Android Artifacts to Release
+        uses: tauri-apps/tauri-action@v0 # Uses the official Tauri GitHub Action for release management.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Required for the action to interact with GitHub.
         with:
           tagName: app-v__VERSION__ # The tag name for the GitHub release. '__VERSION__' is automatically replaced by Tauri.
           releaseName: 'App v__VERSION__' # The name of the GitHub release.
           releaseBody: 'See the assets to download this version and install.' # The body text for the GitHub release.
           releaseDraft: true # Creates the release as a draft. Set to 'false' to publish immediately.
           prerelease: false # Set to 'true' if this is a pre-release.
-          # Directly pass the 'android build --apk' command and its arguments to the 'args' parameter.
-          # This should ensure only the Android build is performed and its artifacts are processed.
-          args: 'android build --apk'
+          # Set command to 'none' to prevent the action from running its own build command.
+          command: 'none'
+          # Explicitly define file patterns to only upload Android APK/AAB files.
+          # The target triple (aarch64-linux-android) is important for the correct path.
+          file-patterns: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/apk/*.apk
+            src-tauri/target/${{ matrix.target }}/release/bundle/aab/*.aab

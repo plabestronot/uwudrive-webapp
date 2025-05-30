@@ -3,7 +3,7 @@ name: 'publish-android'
 on:
   push:
     branches:
-      - master
+      - release
 
 # This workflow will trigger on each push to the `release` branch to create or update a GitHub release, build your Android app, and upload the artifacts to the release.
 
@@ -62,7 +62,7 @@ jobs:
         shell: bash # Ensures the command runs in a bash shell.
 
       - name: install frontend dependencies
-        run: yarn install # Installs your frontend dependencies. Change 'yarn install' to 'npm install' or 'pnpm install' if you use a different package manager.
+        run: pnpm install # Installs your frontend dependencies. Changed from 'yarn install' to 'pnpm install'.
 
       - name: Build Tauri Android app
         uses: tauri-apps/tauri-action@v0 # Uses the official Tauri GitHub Action for building.

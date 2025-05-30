@@ -83,6 +83,9 @@ jobs:
           # but primary signing configuration should come from keystore.properties read by Gradle.
           TAURI_KEY_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }} # Corresponds to storePassword for broader use by Tauri if needed
           TAURI_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          TAURI_KEY_ALIAS_PASSWORD: ${{ secrets.KEY_ALIAS_PASSWORD }} # Corresponds to keyPassword
+
+      - name: List generated APKs (for debugging)
         if: always() # Run this step even if the build fails, to help debug paths
         run: |
           echo "Searching for APKs in src-tauri/gen/android/ and src-tauri/target/"

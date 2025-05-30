@@ -60,6 +60,7 @@ jobs:
         shell: bash # Ensures the command runs in a bash shell.
 
       - name: Setup Android SDK
+        id: setup-android-sdk # Added an ID to this step to access its outputs.
         uses: android-actions/setup-android@v3 # Action to set up the Android SDK.
         with:
           api-level: 34 # Installs Android API level 34, as specified in your setup script.
@@ -91,6 +92,8 @@ jobs:
           ORG_GRADLE_PROJECT_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           ORG_GRADLE_PROJECT_KEY_PASSWORD: ${{ secrets.KEY_ALIAS_PASSWORD }}
+          # Set NDK_HOME using the output from the 'Setup Android SDK' step.
+          NDK_HOME: ${{ steps.setup-android-sdk.outputs.android-ndk-home }}
 
       - name: Upload Android Artifacts to Release
         uses: tauri-apps/tauri-action@v0 # Uses the official Tauri GitHub Action for release management.

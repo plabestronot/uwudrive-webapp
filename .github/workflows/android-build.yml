@@ -1,114 +1,171 @@
-name: 'publish-android'
+name: Build Tauri Android App and Release
 
 on:
   push:
     branches:
-      - master
-
-# This workflow will trigger on each push to the `release` branch to create or update a GitHub release, build your Android app, and upload the artifacts to the release.
+      - master # Triggers on push to the 'release' branch
+  workflow_dispatch: # Allows manual triggering from the GitHub Actions UI
 
 jobs:
-  publish-tauri-android:
+  build-android-and-release: # Renamed job for clarity
+    runs-on: ubuntu-latest
     permissions:
-      contents: write # Required to create and update GitHub releases and upload artifacts.
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Targeting Ubuntu 22.04 for Android builds.
-          # The 'target' specifies the Rust build target for Android ARM64.
-          - platform: 'ubuntu-22.04'
-            target: 'aarch64-linux-android'
-
-    runs-on: ${{ matrix.platform }} # The runner environment for the job.
+      contents: write # Required to create GitHub releases and tags
 
     steps:
-      - uses: actions/checkout@v4 # Checks out your repository code.
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4 # Installs pnpm.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          version: 10 # Specifies pnpm version 10.
+          version: 10
 
-      - name: setup node
-        uses: actions/setup-node@v4 # Sets up Node.js environment.
+      - name: Setup Node.js and cache pnpm
+        uses: actions/setup-node@v4
         with:
-          node-version: lts/* # Uses the latest LTS version of Node.js.
-          cache: 'pnpm' # Caches pnpm dependencies to speed up subsequent runs.
+          node-version: '20'
+          cache: 'pnpm'
 
-      - name: install Rust stable
-        uses: dtolnay/rust-toolchain@stable # Installs the stable Rust toolchain.
+      - name: Get app version
+        id: get_version
+        run: |
+          # Ensure jq is available (usually pre-installed on GitHub runners)
+          if ! command -v jq &> /dev/null
+          then
+              echo "jq could not be found, installing..."
+              sudo apt-get update && sudo apt-get install -y jq
+          fi
+
+          # Extract version from tauri.conf.json or package.json
+          # Adjust path to tauri.conf.json if it's not in src-tauri/ or root
+          VERSION_FILE_PATH=""
+          if [ -f "src-tauri/tauri.conf.json" ]; then
+            VERSION_FILE_PATH="src-tauri/tauri.conf.json"
+          elif [ -f "tauri.conf.json" ]; then # If tauri.conf.json is in root
+            VERSION_FILE_PATH="tauri.conf.json"
+          elif [ -f "package.json" ]; then # Fallback to package.json
+             APP_VERSION=$(jq -r '.version' package.json)
+          fi
+
+          if [ -n "$VERSION_FILE_PATH" ]; then
+            # For tauri.conf.json, the version is typically under package.version
+            APP_VERSION=$(jq -r '.package.version' "$VERSION_FILE_PATH")
+          fi
+          
+          if [ -z "$APP_VERSION" ] || [ "$APP_VERSION" == "null" ]; then
+            echo "Error: Could not determine app version from tauri.conf.json or package.json."
+            exit 1
+          fi
+          
+          echo "App Version: $APP_VERSION"
+          # Set environment variable for use in subsequent steps
+          echo "APP_VERSION=$APP_VERSION" >> $GITHUB_ENV
+          # Set output for potential use in other ways (optional here as we use GITHUB_ENV)
+          echo "::set-output name=app_version::$APP_VERSION"
+        shell: bash
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Install Rust stable toolchain and Android targets
+        uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }} # Installs the specific Rust target for Android (aarch64-linux-android).
+          toolchain: stable
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
-      - name: install Java
-        uses: actions/setup-java@v4 # Sets up Java Development Kit (JDK).
+      - name: Install OpenJDK 17
+        uses: actions/setup-java@v4
         with:
-          distribution: 'temurin' # Specifies the Temurin distribution of OpenJDK.
-          java-version: '17' # Installs JDK version 17, matching the 'openjdk-17-jdk' from your setup script.
+          distribution: 'temurin'
+          java-version: '17'
 
-      - name: install dependencies (ubuntu only)
-        # This step installs the necessary system dependencies for Tauri on Ubuntu,
-        # including webkit2gtk, gdk-3.0, and other GTK-related libraries,
-        # as well as additional dependencies specified by the user.
-        # Removed 'libappindicator3-dev' due to conflict with 'libayatana-appindicator3-dev'.
-        if: matrix.platform == 'ubuntu-22.04'
+      - name: Install Android SDK prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev librsvg2-dev patchelf libxdo-dev libssl-dev libayatana-appindicator3-dev
-        shell: bash # Ensures the command runs in a bash shell.
+          sudo apt-get install -y wget unzip lib32stdc++6 lib32z1
 
-      - name: Setup Android SDK
-        id: setup-android-sdk # Added an ID to this step to access its outputs.
-        uses: android-actions/setup-android@v3 # Action to set up the Android SDK.
-        with:
-          api-level: 34 # Installs Android API level 34, as specified in your setup script.
-          build-tools: 34.0.0 # Installs Android Build Tools version 34.0.0.
-          ndk: 26.1.10909125 # Installs Android NDK version 26.1.10909125.
-          # The action automatically handles installing platform-tools and command-line tools.
-
-      - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses # Accepts all Android SDK licenses, which is necessary for building.
-
-      - name: Create keystore file
-        # This step decodes the base64-encoded keystore secret and saves it to the expected path.
-        # The path 'src-tauri/gen/android/app/upload-keystore.jks' is where Gradle expects to find the keystore.
+      - name: Setup Android SDK and NDK
+        shell: bash
         run: |
-          mkdir -p src-tauri/gen/android/app/
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > src-tauri/gen/android/app/upload-keystore.jks
-        shell: bash # Ensures the command runs in a bash shell.
+          SDK_DIR="$RUNNER_TEMP/android-sdk"
+          mkdir -p "$SDK_DIR"
+          cd "$SDK_DIR"
+          wget https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
+          unzip commandlinetools-linux-13114758_latest.zip
+          mkdir -p "$SDK_DIR/cmdline-tools-final/latest"
+          mv "$SDK_DIR/cmdline-tools"/* "$SDK_DIR/cmdline-tools-final/latest/"
+          rm -rf "$SDK_DIR/cmdline-tools"
+          mv "$SDK_DIR/cmdline-tools-final" "$SDK_DIR/cmdline-tools"
+          echo "ANDROID_SDK_ROOT=$SDK_DIR" >> $GITHUB_ENV
+          echo "ANDROID_HOME=$SDK_DIR" >> $GITHUB_ENV
+          echo "$SDK_DIR/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$SDK_DIR/platform-tools" >> $GITHUB_PATH
+          echo "$SDK_DIR/emulator" >> $GITHUB_PATH
+          export PATH="$SDK_DIR/cmdline-tools/latest/bin:$SDK_DIR/platform-tools:$PATH"
+          NDK_VERSION="26.1.10909125"
+          echo "NDK_HOME=$SDK_DIR/ndk/$NDK_VERSION" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$SDK_DIR/ndk/$NDK_VERSION" >> $GITHUB_ENV
+          yes | sdkmanager --licenses || echo "Warning: Failed to accept all SDK licenses."
+          echo "Installing SDK components..."
+          sdkmanager "platforms;android-34" "platform-tools" "ndk;$NDK_VERSION" "build-tools;34.0.0" "cmdline-tools;latest" --verbose
+          if [ -d "$SDK_DIR/ndk/$NDK_VERSION" ]; then
+            echo "NDK version $NDK_VERSION found at $SDK_DIR/ndk/$NDK_VERSION"
+          else
+            echo "Error: NDK directory $SDK_DIR/ndk/$NDK_VERSION was not found after installation."
+            ls -la "$SDK_DIR/ndk/" || echo "$SDK_DIR/ndk/ does not exist or is not accessible."
+            echo "Please check the NDK version and sdkmanager output. The build might fail."
+          fi
 
-      - name: install frontend dependencies
-        run: pnpm install # Installs your frontend dependencies.
+      - name: Initialize Tauri Android project (if needed)
+        run: pnpm tauri android init
 
-      - name: Build Tauri Android app (Direct Command)
-        # This step directly executes the pnpm tauri android build --apk command,
-        # ensuring only the Android build process is triggered.
-        run: pnpm tauri android build --apk
+      - name: Create Android Keystore file from secret
+        run: |
+          KEYSTORE_DIR_PATH="src-tauri/gen/android/app"
+          mkdir -p "$KEYSTORE_DIR_PATH"
+          echo "Attempting to create keystore at: ${KEYSTORE_DIR_PATH}/upload-keystore.jks"
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > "${KEYSTORE_DIR_PATH}/upload-keystore.jks"
+          if [ -f "${KEYSTORE_DIR_PATH}/upload-keystore.jks" ]; then
+            echo "Keystore file created successfully."
+          else
+            echo "Error: Keystore file was not created."
+            exit 1
+          fi
         env:
-          # Environment variables for Android signing. These are picked up by Gradle during the build process.
-          # Ensure these secrets are correctly configured in your GitHub repository settings.
-          ORG_GRADLE_PROJECT_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          ORG_GRADLE_PROJECT_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          ORG_GRADLE_PROJECT_KEY_PASSWORD: ${{ secrets.KEY_ALIAS_PASSWORD }}
-          # Set NDK_HOME using the output from the 'Setup Android SDK' step.
-          NDK_HOME: ${{ steps.setup-android-sdk.outputs.android-ndk-home }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
 
-      - name: Upload Android Artifacts to Release
-        uses: tauri-apps/tauri-action@v0 # Uses the official Tauri GitHub Action for release management.
+      - name: Build Tauri Android App (APK)
+        run: pnpm tauri android build --apk --verbose
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Required for the action to interact with GitHub.
+          TAURI_ANDROID_KEYSTORE_PATH: "src-tauri/gen/android/app/upload-keystore.jks"
+          TAURI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          TAURI_ANDROID_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          TAURI_ANDROID_KEY_ALIAS_PASSWORD: ${{ secrets.KEY_ALIAS_PASSWORD }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by GitHub Actions
         with:
-          tagName: app-v__VERSION__ # The tag name for the GitHub release. '__VERSION__' is automatically replaced by Tauri.
-          releaseName: 'App v__VERSION__' # The name of the GitHub release.
-          releaseBody: 'See the assets to download this version and install.' # The body text for the GitHub release.
-          releaseDraft: true # Creates the release as a draft. Set to 'false' to publish immediately.
-          prerelease: false # Set to 'true' if this is a pre-release.
-          # Set command to 'none' to prevent the action from running its own build command.
-          command: 'none'
-          # Explicitly define file patterns to only upload Android APK/AAB files.
-          # The target triple (aarch64-linux-android) is important for the correct path.
-          file-patterns: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/apk/*.apk
-            src-tauri/target/${{ matrix.target }}/release/bundle/aab/*.aab
+          tag_name: app-v${{ env.APP_VERSION }} # Creates a tag like app-vX.Y.Z
+          name: App v${{ env.APP_VERSION }} # Release name
+          body: | # Release body/description
+            See the assets to download this version and install.
+            App version: ${{ env.APP_VERSION }}
+          draft: true # Creates a draft release
+          prerelease: false # Marks as not a pre-release
+          files: | # List of files to upload as release assets
+            src-tauri/target/android-apk/release/apk/app-release.apk
+            # If you have other assets, like a debug APK, list them here too:
+            # src-tauri/target/android-apk/debug/apk/app-debug.apk
+
+      # The step below is now optional, as the APK is uploaded to the GitHub Release.
+      # You can keep it if you also want the APK as a downloadable artifact directly from the workflow run summary.
+      - name: Upload Android APK artifact (optional)
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-artifact # Renamed to avoid confusion with release assets
+          path: |
+            src-tauri/target/android-apk/release/apk/app-release.apk
+          if-no-files-found: error

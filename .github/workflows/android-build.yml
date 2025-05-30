@@ -52,12 +52,11 @@ jobs:
         # This step installs the necessary system dependencies for Tauri on Ubuntu,
         # including webkit2gtk, gdk-3.0, and other GTK-related libraries,
         # as well as additional dependencies specified by the user.
-        # These are required for the Tauri build process even when targeting Android,
-        # as the build is performed on a Linux runner.
+        # Removed 'libappindicator3-dev' due to conflict with 'libayatana-appindicator3-dev'.
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libssl-dev libayatana-appindicator3-dev
+          sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev librsvg2-dev patchelf libxdo-dev libssl-dev libayatana-appindicator3-dev
         shell: bash # Ensures the command runs in a bash shell.
 
       - name: Setup Android SDK

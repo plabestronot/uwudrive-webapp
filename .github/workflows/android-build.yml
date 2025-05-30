@@ -42,15 +42,14 @@ jobs:
           VERSION_FILE_PATH=""
           if [ -f "src-tauri/tauri.conf.json" ]; then
             VERSION_FILE_PATH="src-tauri/tauri.conf.json"
+            # Corrected jq command for tauri.conf.json
+            APP_VERSION=$(jq -r '.version' "$VERSION_FILE_PATH")
           elif [ -f "tauri.conf.json" ]; then # If tauri.conf.json is in root
             VERSION_FILE_PATH="tauri.conf.json"
+            # Corrected jq command for tauri.conf.json
+            APP_VERSION=$(jq -r '.version' "$VERSION_FILE_PATH")
           elif [ -f "package.json" ]; then # Fallback to package.json
-             APP_VERSION=$(jq -r '.version' package.json)
-          fi
-
-          if [ -n "$VERSION_FILE_PATH" ]; then
-            # For tauri.conf.json, the version is typically under package.version
-            APP_VERSION=$(jq -r '.package.version' "$VERSION_FILE_PATH")
+              APP_VERSION=$(jq -r '.version' package.json)
           fi
           
           if [ -z "$APP_VERSION" ] || [ "$APP_VERSION" == "null" ]; then

@@ -1,85 +1,112 @@
-name: Android Build
+name: 'Build Tauri Android App'
 
 on:
   push:
     branches:
-      - master
+      - master # Adjust this to your release branch, e.g., main, master
 
 jobs:
-  build:
-    name: Build APK
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./frontend
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v3
-        with:
-          ref: master
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest # ubuntu-22.04 is also a good choice
+    permissions:
+      contents: write # Required to create a GitHub Release
 
-      - name: Setup java
-        uses: actions/setup-java@v3
-        with:
-          distribution: "zulu"
-          java-version: "21"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 20.x
+          node-version: lts/* # Or your specific Node.js version
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v3
         with:
-          version: 8
+          version: latest # Or your specific pnpm version
 
-      - name: install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Install Rust stable with Android targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: 'aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android'
 
-      - name: Create Build Folder
-        run: pnpm run build
+      - name: Install frontend dependencies
+        run: pnpm install
 
-      - name: Add android folder if not present
-        run: if [ ! -d "./android" ]; then npx cap add android; fi
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin' # Or another distribution like 'zulu'
+          java-version: '17' # Matches your setup-tauri.sh
 
-      - name: Capacitor update
-        run: npx cap update
+      - name: Setup Android SDK and NDK
+        uses: reactivecircus/setup-android-sdk@v2 # Using v2 as it's well-established
+        with:
+          platforms: 'android-34'        # Corresponds to "platforms;android-34"
+          build-tools: '34.0.0'          # Corresponds to "build-tools;34.0.0"
+          ndk: '26.1.10909125'           # Corresponds to "ndk;26.1.10909125"
+          # cmdline-tools: 'latest' # The action usually installs a recent version. Your script used 13114758.
+                                    # If specific cmdline-tools are needed and this doesn't work, this might need adjustment.
+                                    # This action automatically accepts SDK licenses.
 
-      - name: Capacitor copy
-        run: npx cap copy
-
-      - name: Generate icons and splash screen to android folder
-        run: if [ -d "./resources" ]; then pnpm add @capacitor/assets --save-dev && npx capacitor-assets generate --android; fi
-
-      - name: Build app bundle
-        run: cd android && ./gradlew bundle && ./gradlew assembleDebug
-
-      - name: Extract Android signing key from env
+      - name: Configure Android Signing
+        # This step decodes the keystore and creates the keystore.properties file.
+        # Assumes your build.gradle.kts is configured to read 'src-tauri/gen/android/keystore.properties'.
+        # Your keystore file (upload-keystore.jks) will be placed at 'src-tauri/gen/android/app/upload-keystore.jks'.
+        # The keystore.properties file will be created at 'src-tauri/gen/android/keystore.properties'.
+        if: secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.KEYSTORE_PASSWORD != '' && secrets.KEY_ALIAS != '' && secrets.KEY_ALIAS_PASSWORD != ''
         run: |
-          echo "${{ secrets.RELEASE_KEYSTORE }}" > android/release.jks.base64
-          base64 -d android/release.jks.base64 > android/release.decrypted.jks
+          echo "Ensuring target directory for keystore exists..."
+          mkdir -p src-tauri/gen/android/app
+          
+          echo "Decoding Android keystore..."
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > src-tauri/gen/android/app/upload-keystore.jks
+          echo "Keystore placed at src-tauri/gen/android/app/upload-keystore.jks"
 
-      - name: Sign dev build
-        run: jarsigner -keystore android/release.decrypted.jks -storepass "${{ secrets.RELEASE_KEYSTORE_PASSWORD }}" -signedjar ./android/app/build/outputs/bundle/release/app-release-signed.aab ./android/app/build/outputs/bundle/release/app-release.aab release
+          echo "Creating keystore.properties at src-tauri/gen/android/keystore.properties..."
+          # The storeFile path is relative to the keystore.properties file itself.
+          echo "storeFile=app/upload-keystore.jks" > src-tauri/gen/android/keystore.properties
+          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" >> src-tauri/gen/android/keystore.properties
+          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> src-tauri/gen/android/keystore.properties
+          echo "keyPassword=${{ secrets.KEY_ALIAS_PASSWORD }}" >> src-tauri/gen/android/keystore.properties
+          echo "keystore.properties created successfully."
 
-      - name: Check folder content of android output
-        run: ls ./android/app/build/outputs/bundle/release
-
-      - name: Install Hub CLI
-        run: |
-          HUB_VERSION="2.14.2"
-          HUB_URL="https://github.com/github/hub/releases/download/v${HUB_VERSION}/hub-linux-amd64-${HUB_VERSION}.tgz"
-          curl -sSL $HUB_URL | tar -xz
-          sudo mv ./hub-linux-amd64-${HUB_VERSION}/bin/hub /usr/local/bin/
-          hub --version
-
-      - name: Build Release
-        shell: bash
-        run: |
-          hub release create latest \
-          -m "latest" \
-          -a ./android/app/build/outputs/bundle/release/app-release-signed.aab \
-          -a ./android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Build Android APK
+        # This command builds the APK(s) as configured in your tauri.conf.json (for specific architectures)
+        # and uses the signing configuration from build.gradle.kts / tauri.conf.json.
+        # Gradle should primarily use the keystore.properties file created in the previous step.
+        run: pnpm tauri android build --apk
         env:
-          GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+          # These environment variables can be used by Tauri to influence the build,
+          # but primary signing configuration should come from keystore.properties read by Gradle.
+          TAURI_KEY_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }} # Corresponds to storePassword for broader use by Tauri if needed
+          TAURI_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        if: always() # Run this step even if the build fails, to help debug paths
+        run: |
+          echo "Searching for APKs in src-tauri/gen/android/ and src-tauri/target/"
+          find src-tauri/gen/android/ -name "*.apk" -ls || echo "No APKs found in src-tauri/gen/android/"
+          find src-tauri/target/ -name "*.apk" -ls || echo "No APKs found in src-tauri/target/"
+          echo "Expected APK path for tauri-action (example): src-tauri/gen/android/app/app/build/outputs/apk/release/app-release.apk"
+
+      - name: Publish to GitHub Release with Tauri Action
+        uses: tauri-apps/tauri-action@v0 # Using v0 as per official Tauri examples
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signing variables are not directly used by tauri-action for publishing,
+          # but GITHUB_TOKEN is essential.
+        with:
+          tagName: android-v__VERSION__ # __VERSION__ is replaced by the app version from tauri.conf.json
+          releaseName: 'Android App v__VERSION__'
+          releaseBody: 'Android APK for v__VERSION__.'
+          releaseDraft: true # Set to false to publish immediately
+          prerelease: false
+          # The 'include' glob pattern tells tauri-action where to find the APKs.
+          # This pattern searches recursively within src-tauri/gen/android/ for release APKs.
+          # Adjust if your product name isn't 'app' or if paths differ.
+          # Example: src-tauri/gen/android/myCoolApp/app/build/outputs/apk/release/*.apk
+          # The `**/` should handle the variable product name directory.
+          include: 'src-tauri/gen/android/**/app/build/outputs/apk/release/*.apk'
+          # If AABs are built (`--aab` flag instead of `--apk`), the include path would be:
+          # include: 'src-tauri/gen/android/**/app/build/outputs/bundle/release/*.aab'

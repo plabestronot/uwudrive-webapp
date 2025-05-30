@@ -3,7 +3,7 @@ name: 'publish-android'
 on:
   push:
     branches:
-      - master
+      - release
 
 # This workflow will trigger on each push to the `release` branch to create or update a GitHub release, build your Android app, and upload the artifacts to the release.
 
@@ -26,10 +26,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4 # Checks out your repository code.
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4 # Installs pnpm.
+        with:
+          version: 10 # Specifies pnpm version 10.
+
       - name: setup node
         uses: actions/setup-node@v4 # Sets up Node.js environment.
         with:
           node-version: lts/* # Uses the latest LTS version of Node.js.
+          cache: 'pnpm' # Caches pnpm dependencies to speed up subsequent runs.
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable # Installs the stable Rust toolchain.
@@ -62,7 +68,7 @@ jobs:
         shell: bash # Ensures the command runs in a bash shell.
 
       - name: install frontend dependencies
-        run: pnpm install # Installs your frontend dependencies. Changed from 'yarn install' to 'pnpm install'.
+        run: pnpm install # Installs your frontend dependencies.
 
       - name: Build Tauri Android app
         uses: tauri-apps/tauri-action@v0 # Uses the official Tauri GitHub Action for building.

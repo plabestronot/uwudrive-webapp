@@ -85,4 +85,7 @@ jobs:
           releaseBody: 'See the assets to download this version and install.' # The body text for the GitHub release.
           releaseDraft: true # Creates the release as a draft. Set to 'false' to publish immediately.
           prerelease: false # Set to 'true' if this is a pre-release.
-          args: ${{ matrix.target }} # Passes the Android target to the Tauri build command.
+          # Changed 'args' to 'tauri-target' for specifying the Rust target for Android.
+          tauri-target: ${{ matrix.target }}
+          # Added 'tauri-cli-args' to explicitly run the 'android build --apk' command.
+          tauri-cli-args: 'android build --apk'
